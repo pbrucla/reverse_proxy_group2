@@ -139,19 +139,14 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 	const requestBody = buf.slice(idxHeadersEnd + 4, idxBodyEnd);
 	//check if request body matches content length
 	if (requestBody.length !== contentLength) {
-		await writeBadRequestResponse(
-			conn,
-			"Request body does not match Content-Length header"
-		);
+		await writeBadRequestResponse(conn,	"Request body does not match Content-Length header");
 		return;
 	}
 
 	/* Write response */
 	let response = `${dec.decode(httpVersion)} 200 OK\r\n`;
 	for (const header of headers) {
-		response += `${dec.decode(header.fieldName)}: ${dec.decode(
-			header.fieldValue
-		)}\r\n`;
+		response += `${dec.decode(header.fieldName)}: ${dec.decode(header.fieldValue)}\r\n`;
 	}
 	response += "\r\n";
 	response += dec.decode(requestBody);
