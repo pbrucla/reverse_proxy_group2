@@ -4,7 +4,7 @@ import { indexOfNeedle } from "https://deno.land/std@0.223.0/bytes/mod.ts";
 /***
  * Write a 400 Bad Request response to the connection, then close the connection
  */
-async function writeBadRequest(
+async function writeBadRequestResponse(
 	conn: Deno.Conn,
 	errorDetails: string
 ): Promise<void> {
@@ -50,14 +50,14 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 		"TRACE",
 	];
 	if (!VALID_METHODS.includes(dec.decode(method))) {
-		await writeBadRequest(conn, "Invalid method");
+		await writeBadRequestResponse(conn, "Invalid method");
 		return;
 	}
 
 	// get request target
 	const idxRequestTargetEnd = indexOfNeedle(buf, B_SPACE, idxMethodEnd + 1);
 	if (idxRequestTargetEnd === -1) {
-		await writeBadRequest(conn, "Missing request target");
+		await writeBadRequestResponse(conn, "Missing request target");
 		return;
 	}
 	//TODO validate request target
@@ -69,7 +69,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 	const B_VALID_HTTP_VERSION = enc.encode("HTTP/1.1");
 	//check that it is HTTP/1.1
 	if (!equals(httpVersion, B_VALID_HTTP_VERSION)) {
-		await writeBadRequest(conn, "Invalid HTTP version");
+		await writeBadRequestResponse(conn, "Invalid HTTP version");
 		return;
 	}
 
@@ -83,7 +83,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
 	let idxHeaderEnd = indexOfNeedle(buf, B_CRLF, idxHeaderStart + 1);
 	if (idxHeaderEnd === -1) {
-		await writeBadRequest(conn, "Missing headers");
+		await writeBadRequestResponse(conn, "Missing headers");
 		return;
 	}
 
@@ -93,7 +93,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
 		const colonIdx = indexOfNeedle(fieldLine, B_COLON);
 		if (colonIdx === -1) {
-			await writeBadRequest(conn, "Invalid header, missing colon");
+			await writeBadRequestResponse(conn, "Invalid header, missing colon");
 			return;
 		}
 		//field-line   = field-name ":" OWS field-value OWS
@@ -115,13 +115,13 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 		equals(header.fieldName, enc.encode("Content-Length"))
 	);
 	if (contentLengthHeader === undefined) {
-		await writeBadRequest(conn, "Missing Content-Length header");
+		await writeBadRequestResponse(conn, "Missing Content-Length header");
 		return;
 	}
 	//validate content length
 	const contentLength = parseInt(dec.decode(contentLengthHeader.fieldValue));
 	if (isNaN(contentLength) || contentLength < 0) {
-		await writeBadRequest(conn, "Invalid Content-Length header");
+		await writeBadRequestResponse(conn, "Invalid Content-Length header");
 		return;
 	}
 
@@ -130,7 +130,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 		equals(header.fieldName, enc.encode("Content-Type"))
 	);
 	if (contentTypeHeader === undefined) {
-		await writeBadRequest(conn, "Missing Content-Type header");
+		await writeBadRequestResponse(conn, "Missing Content-Type header");
 		return;
 	}
 
@@ -139,7 +139,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 	const requestBody = buf.slice(idxHeadersEnd + 4, idxBodyEnd);
 	//check if request body matches content length
 	if (requestBody.length !== contentLength) {
-		await writeBadRequest(
+		await writeBadRequestResponse(
 			conn,
 			"Request body does not match Content-Length header"
 		);
