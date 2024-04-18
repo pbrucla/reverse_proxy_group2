@@ -113,17 +113,3 @@ const listener = Deno.listen({ port: 8080 });
 for await (const conn of listener) {
     handleConnection(conn);
 }
-
-
-// parse response message
-
-// POST / HTTP/1.1
-// Host: 127.0.0.1:8080
-// User-Agent: curl/8.7.1
-// Accept: */*
-// Content-Length: 15
-// Content-Type: application/x-www-form-urlencoded
-
-// a=b&asdf=foobar
-
-//curl -X POST -H "User-Agent: curl/8.7.1" -H "Accept: */*" -H "Content-Type: application/x-www-form-urlencoded" -d "a=b&asdf=foobar" http://172.26.120.138:8080 --http2 --output -
