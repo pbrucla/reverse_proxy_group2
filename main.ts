@@ -1,12 +1,21 @@
 import { concat, equals } from "https://deno.land/std@0.102.0/bytes/mod.ts";
 import { indexOfNeedle } from "https://deno.land/std@0.223.0/bytes/mod.ts";
 
+/***
+ * Write a 400 Bad Request response to the connection
+ */
 async function writeBadRequest(conn: Deno.Conn, errorDetails: string): Promise<void> {
     const enc = new TextEncoder();
     await conn.write(enc.encode(`HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid request, ${errorDetails}`));
 }
 
-async function handleConnection(conn: Deno.Conn): Promise<void> { // get a connection out of the way
+/***
+ * Handle a connection
+ * 
+ * Parses and validates the request, then writes a response echoing the request headers and body
+ * 
+ */
+async function handleConnection(conn: Deno.Conn): Promise<void> {
     const buf = new Uint8Array(4096);
     while (true) {
         const nbytes = await conn.read(buf);
@@ -72,7 +81,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> { // get a conne
             const fieldName = fieldLine.slice(0, colonIdx);
             let fieldValue = fieldLine.slice(colonIdx+1);
 
-            //trim optional white space (OWD) on field value
+            //trim optional white space (OWS) on field value
             fieldValue = enc.encode(dec.decode(fieldValue).trim());
             //TODO validate header
             headers.push({fieldName, fieldValue});
