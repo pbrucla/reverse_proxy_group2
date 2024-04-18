@@ -1,10 +1,3 @@
-/*
-const listener = Deno.listen({ port: 5000 });
-console.log("listening on 0.0.0.0:5000");
-for await (const conn of listener) {
-    conn.localAddr
-}
-*/
 import { concat, equals } from "https://deno.land/std@0.102.0/bytes/mod.ts";
 import { indexOfNeedle } from "https://deno.land/std@0.223.0/bytes/mod.ts";
 
