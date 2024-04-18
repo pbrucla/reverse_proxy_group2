@@ -8,6 +8,11 @@ for await (const conn of listener) {
 import { concat, equals } from "https://deno.land/std@0.102.0/bytes/mod.ts";
 import { indexOfNeedle } from "https://deno.land/std@0.223.0/bytes/mod.ts";
 
+async function writeBadRequest(conn: Deno.Conn, errorDetails: string): Promise<void> {
+    const enc = new TextEncoder();
+    await conn.write(enc.encode(`HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid request, ${errorDetails}`));
+}
+
 async function handleConnection(conn: Deno.Conn): Promise<void> { // get a connection out of the way
     const buf = new Uint8Array(4096);
     while (true) {
@@ -16,17 +21,6 @@ async function handleConnection(conn: Deno.Conn): Promise<void> { // get a conne
             break;
         }
 
-        /**
-         * Sample request:
-            POST / HTTP/1.1
-            Host: 127.0.0.1:8080
-            User-Agent: curl/8.7.1
-            Accept: /
-            Content-Length: 15
-            Content-Type: application/x-www-form-urlencoded
-
-            a=b&asdf=foobar
-         */
         console.log(nbytes);
         const enc = new TextEncoder();
         const dec = new TextDecoder();
@@ -34,26 +28,24 @@ async function handleConnection(conn: Deno.Conn): Promise<void> { // get a conne
         const B_CRLF = enc.encode("\r\n");
         const B_SPACE = enc.encode(" ");
         const firstCRLF = indexOfNeedle(buf, B_CRLF); // index of first CRLF
-        console.log("First line is: " + dec.decode(buf.slice(0, firstCRLF)));
 
         // get method
         const idxMethodEnd = indexOfNeedle(buf, B_SPACE); // index of first space
         const method = buf.slice(0, idxMethodEnd);
         const VALID_METHODS = ["GET", "POST", "PATCH", "OPTIONS", "HEAD", "CONNECT", "TRACE"];
         if (!VALID_METHODS.includes(dec.decode(method))) {
-            console.log("Invalid method");
-            continue;
+            await writeBadRequest(conn, "Invalid method");
+            break;
         }
-        // console.log("Method: " + dec.decode(method));
 
         // get request target
         const idxRequestTargetEnd = indexOfNeedle(buf, B_SPACE, idxMethodEnd+1); 
         if(idxRequestTargetEnd === -1) {
-            console.log("Missing request target");
-            continue;
+            await writeBadRequest(conn, "Missing request target");
+            break;
         }
-        // const requestTarget = buf.slice(idxMethodEnd+1, idxRequestTargetEnd);
-        // console.log("Request target: " + dec.decode(requestTarget));
+        //TODO validate request target
+        const requestTarget = buf.slice(idxMethodEnd+1, idxRequestTargetEnd); 
 
         //get http version 
         //slice to end of line
@@ -61,15 +53,11 @@ async function handleConnection(conn: Deno.Conn): Promise<void> { // get a conne
         const B_VALID_HTTP_VERSION = enc.encode("HTTP/1.1");
         //check that it is HTTP/1.1
         if(!equals(httpVersion, B_VALID_HTTP_VERSION)) {
-            console.log("Invalid HTTP version");
-            continue;
+            await writeBadRequest(conn, "Invalid HTTP version");
+            break;
         }   
-        // const decodedHttpVersion = dec.decode(httpVersion).trim();
-        // console.log(`[${decodedHttpVersion}]`, decodedHttpVersion.length); 
     
-        
-        //get headers
-        
+        //get headers    
         // create UInt8Array concatenating two B_CRLF
         const B_HEADERS_END = concat(B_CRLF, B_CRLF);
         //end of headers delimiter is two CRLF
@@ -84,8 +72,8 @@ async function handleConnection(conn: Deno.Conn): Promise<void> { // get a conne
 
             const colonIdx = indexOfNeedle(fieldLine, B_COLON);
             if(colonIdx === -1) {
-                console.log("Invalid header at " + dec.decode(fieldLine) + " missing colon");
-                continue;
+                await writeBadRequest(conn, "Invalid header, missing colon");
+                break;
             }
             //field-line   = field-name ":" OWS field-value OWS
             const fieldName = fieldLine.slice(0, colonIdx);
@@ -93,7 +81,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> { // get a conne
 
             //trim optional white space (OWD) on field value
             fieldValue = enc.encode(dec.decode(fieldValue).trim());
-            
+            //TODO validate header
             headers.push({fieldName, fieldValue});
 
             //move header start to end of current header
@@ -137,3 +125,5 @@ for await (const conn of listener) {
 // Content-Type: application/x-www-form-urlencoded
 
 // a=b&asdf=foobar
+
+//curl -X POST -H "User-Agent: curl/8.7.1" -H "Accept: */*" -H "Content-Type: application/x-www-form-urlencoded" -d "a=b&asdf=foobar" http://172.26.120.138:8080 --http2 --output -
