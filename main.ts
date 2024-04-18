@@ -67,11 +67,16 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         const headers = [];
         let idxHeaderStart = idxFirstCRLF;
 
+        let idxHeaderEnd = indexOfNeedle(buf, B_CRLF, idxHeaderStart+1);
+        if(idxHeaderEnd === -1) {
+            await writeBadRequest(conn, "Missing headers");
+            break;
+        }
+
         const B_COLON = enc.encode(":");
         while(idxHeaderStart < idxHeadersEnd) {
-            const idxHeaderEnd = indexOfNeedle(buf, B_CRLF, idxHeaderStart+1);
             const fieldLine = buf.slice(idxHeaderStart, idxHeaderEnd);
-
+            
             const colonIdx = indexOfNeedle(fieldLine, B_COLON);
             if(colonIdx === -1) {
                 await writeBadRequest(conn, "Invalid header, missing colon");
@@ -88,11 +93,36 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
             //move header start to end of current header
             idxHeaderStart = idxHeaderEnd + 2;
+            idxHeaderEnd = indexOfNeedle(buf, B_CRLF, idxHeaderStart+1);
+        }
+
+        //check for Content-Length header
+        const contentLengthHeader = headers.find(header => equals(header.fieldName, enc.encode("Content-Length")));
+        if(contentLengthHeader === undefined) {
+            await writeBadRequest(conn, "Missing Content-Length header");
+            break;
+        }
+        //validate content length
+        const contentLength = parseInt(dec.decode(contentLengthHeader.fieldValue));
+        if(isNaN(contentLength) || contentLength < 0) {
+            await writeBadRequest(conn, "Invalid Content-Length header");
+            break;
+        }
+
+        //check for Content-Type header
+        const contentTypeHeader = headers.find(header => equals(header.fieldName, enc.encode("Content-Type")));
+        if(contentTypeHeader === undefined) {
+            await writeBadRequest(conn, "Missing Content-Type header");
+            break;
         }
 
         //get requestBody (remaining portion of request after headers)
         const requestBody = buf.slice(idxHeadersEnd+4); 
-
+        //check if request body matches content length
+        if(requestBody.length !== contentLength) {
+            await writeBadRequest(conn, "Request body does not match Content-Length header");
+            break;
+        }
 
         /* Write response */
         let response = `${dec.decode(httpVersion)} 200 OK\r\n`;
