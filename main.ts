@@ -29,7 +29,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         
         const B_CRLF = enc.encode("\r\n");
         const B_SPACE = enc.encode(" ");
-        const firstCRLF = indexOfNeedle(buf, B_CRLF); // index of first CRLF
+        const idxFirstCRLF = indexOfNeedle(buf, B_CRLF); // index of first CRLF
 
         // get method
         const idxMethodEnd = indexOfNeedle(buf, B_SPACE); // index of first space
@@ -51,7 +51,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         //get http version 
         //slice to end of line
-        const httpVersion = buf.slice(idxRequestTargetEnd+1, firstCRLF); 
+        const httpVersion = buf.slice(idxRequestTargetEnd+1, idxFirstCRLF); 
         const B_VALID_HTTP_VERSION = enc.encode("HTTP/1.1");
         //check that it is HTTP/1.1
         if(!equals(httpVersion, B_VALID_HTTP_VERSION)) {
@@ -65,7 +65,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         //end of headers delimiter is two CRLF
         const idxHeadersEnd = indexOfNeedle(buf, B_HEADERS_END);
         const headers = [];
-        let idxHeaderStart = firstCRLF;
+        let idxHeaderStart = idxFirstCRLF;
 
         const B_COLON = enc.encode(":");
         while(idxHeaderStart < idxHeadersEnd) {
