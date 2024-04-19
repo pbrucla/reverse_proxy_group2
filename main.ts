@@ -11,7 +11,7 @@ async function writeBadRequestResponse(
 	const enc = new TextEncoder();
 	await conn.write(
 		enc.encode(
-			`HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid request, ${errorDetails}`
+			`HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid request, ${errorDetails}\r\n`
 		)
 	);
 
