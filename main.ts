@@ -173,14 +173,11 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 		}
 	}
 
-	//append 3 new lines to requestBody
-	const NEW_LINE_COUNT = 3;
-
 	/* Write response */
 	response = `HTTP/1.1 200 OK\r\n`;
 	
 	//add content length header
-	response += `Content-Length: ${requestBody.length+NEW_LINE_COUNT*2}\r\n`;
+	response += `Content-Length: ${requestBody.length}\r\n`;
 	//add content type header if was given
 	const contentTypeHeader = headers.find((header) =>
 		equals(header.fieldName, enc.encode("Content-Type"))
@@ -191,9 +188,6 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
 	response += "\r\n";
 	response += dec.decode(requestBody);
-	for(let i = 0; i < NEW_LINE_COUNT; i++) {
-		response += "\r\n";
-	}
 
 	console.log(response);
 
