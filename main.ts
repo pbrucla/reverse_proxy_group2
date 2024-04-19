@@ -1,5 +1,5 @@
-import { concat, equals } from "https://deno.land/std@0.102.0/bytes/mod.ts";
-import { indexOfNeedle } from "https://deno.land/std@0.223.0/bytes/mod.ts";
+import { concat, equals } from "https://deno.land/x/std/bytes/mod.ts";
+import { indexOfNeedle } from "https://deno.land/x/std/bytes/mod.ts";
 
 /***
  * Write a 400 Bad Request response to the connection, then close the connection
@@ -75,7 +75,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
 	//get headers
 	// create UInt8Array concatenating two B_CRLF
-	const B_HEADERS_END = concat(B_CRLF, B_CRLF);
+	const B_HEADERS_END = concat([B_CRLF, B_CRLF]);
 	//end of headers delimiter is two CRLF
 	const idxHeadersEnd = indexOfNeedle(buf, B_HEADERS_END);
 	const headers = [];
@@ -110,38 +110,9 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 		idxHeaderEnd = indexOfNeedle(buf, B_CRLF, idxHeaderStart + 1);
 	}
 
-	//check for Content-Length header
-	const contentLengthHeader = headers.find((header) =>
-		equals(header.fieldName, enc.encode("Content-Length"))
-	);
-	if (contentLengthHeader === undefined) {
-		await writeBadRequestResponse(conn, "Missing Content-Length header");
-		return;
-	}
-	//validate content length
-	const contentLength = parseInt(dec.decode(contentLengthHeader.fieldValue));
-	if (isNaN(contentLength) || contentLength < 0) {
-		await writeBadRequestResponse(conn, "Invalid Content-Length header");
-		return;
-	}
-
-	//check for Content-Type header
-	const contentTypeHeader = headers.find((header) =>
-		equals(header.fieldName, enc.encode("Content-Type"))
-	);
-	if (contentTypeHeader === undefined) {
-		await writeBadRequestResponse(conn, "Missing Content-Type header");
-		return;
-	}
-
 	//get requestBody (remaining portion of request after headers) up to null byte
 	const idxBodyEnd = indexOfNeedle(buf, new Uint8Array([0]), idxHeadersEnd + 4);
 	const requestBody = buf.slice(idxHeadersEnd + 4, idxBodyEnd);
-	//check if request body matches content length
-	if (requestBody.length !== contentLength) {
-		await writeBadRequestResponse(conn,	"Request body does not match Content-Length header");
-		return;
-	}
 
 	/* Write response */
 	let response = `${dec.decode(httpVersion)} 200 OK\r\n`;
