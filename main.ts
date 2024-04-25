@@ -30,11 +30,11 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
 	const B_CRLF : Uint8Array = enc.encode("\r\n");
 	const B_SPACE : Uint8Array  = enc.encode(" ");
-	
+	// https://www.rfc-editor.org/rfc/rfc9110#name-common-method-properties
 	const VALID_METHODS = [
 		"GET",
 		"POST",
-		"PATCH",
+		"PUT",
 		"OPTIONS",
 		"HEAD",
 		"CONNECT",
