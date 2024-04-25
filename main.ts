@@ -16,12 +16,22 @@ function todo<T>(): T {
     throw new Error("Unfilled todo " + stack?.split("\n")?.[2]?.trim());
 }
 
-function getBackend(host: string): string[] {
+// Define the interface for a backend server
+interface BackendInterface {
+    address: string,
+    port: number
+}
+
+function getBackend(host: string): BackendInterface[] {
     // Given a host like example.com, return the backend IP address(es) that the request should be forwarded
     // You will also need to create some sort of config system to save this information
-    const ips: string[] = todo();
-
-    return ips;
+    const arrayOfHosts = new Map<string, BackendInterface[]>(
+        [
+            ["example.com", [{address: "155.248.199.0", port: 25563}]]
+        ]
+    )
+    
+    return arrayOfHosts.get(host)!;
 }
 
 function processHeader(line: string): [string, string] {
@@ -119,17 +129,14 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         // you may want to use the parseHeaders() function from above
         const headers: Map<string, string> = parseHeaders(headerList);
 
-        // Now that you have the headers, you can finish reading the body according to the content-length if needed
-
         // Determine your destination server on the backend using the host header
         // use the getBackend() function to determine all of the possible backends, and pick one
-        const requestTarget = requestLine.split(" ")[1];
-        const destIp: string = "155.248.199.0:25563";
+        const address: string = headers.get("Host")!;   // get host from request header
+        const destIp: BackendInterface = getBackend(address)[0]; //TODO arbitrarily get the first backend for now
 
         // Forward the request to the backend!
         // Use the Deno.connect() function to connect to the backend
-        const [hostname, port] = destIp.split(":");
-        const backendConn = await Deno.connect({ hostname: hostname, port: parseInt(port) });
+        const backendConn = await Deno.connect({ hostname: destIp.address, port: destIp.port});
 
         // Construct the request to send to the backend, and write it to the backend connection
         const request = constructRequest(requestLine, headers, body);
