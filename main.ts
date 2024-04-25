@@ -1,6 +1,5 @@
 import { indexOfNeedle, concat } from "https://deno.land/std@0.223.0/bytes/mod.ts";
 
-
 const DOUBLE_CRLF = new Uint8Array([0xd, 0xa, 0xd, 0xa]);
 
 // utility functions to encode and decode to/from Uint8Array
@@ -10,7 +9,6 @@ function enc(x: string): Uint8Array {
 function dec(x: Uint8Array, encoding?: string): string {
     return new TextDecoder(encoding).decode(x)
 }
-
 
 // utility function to mark areas that need to be done
 function todo<T>(): T {
@@ -33,10 +31,9 @@ function processHeader(line: string): [string, string] {
     // Values can contain whitespace in the middle which should be kept, e.g. "User-Agent: Mozilla/5.0 Chrome/91.0"
     // Example input: "Content-Length: 42"
     // Example output: ["content-length", "42"]
-    // Useful methods: indexOf(), slice(), trim()
 
-    const name: string = todo();
-    const value: string = todo();
+    const name: string = line.split(":")[0].toLowerCase().trim();
+    const value: string = line.split(":")[1].trim();
     
     return [name, value];
 }
@@ -47,14 +44,28 @@ function parseHeaders(headers: string[]): Map<string, string> {
     // Don't worry about duplicate headers for now (but technically you're supposed to join them with a comma).
     
     const parsedHeaders: Map<string, string> = new Map();
-
-    todo();
+    headers.forEach(header => {
+        const [name, value] = processHeader(header);
+        parsedHeaders.set(name, value);
+    });
     
     // example input: ["Host: example.com", "Content-Length: 42", "Accept: */*"]
     // example output: Map { "host" => "example.com", "content-length" => "42", "accept" => "*/*" } 
     return parsedHeaders;
 }
 
+function constructRequest(requestLine: string, headers: Map<string, string>, body: Uint8Array): Uint8Array {
+    // Given the request line, headers, and body, return the response to send to the client.
+
+    let request = enc(requestLine + "\r\n");
+    headers.forEach((value, key) => {
+        request = concat([request, enc(`${key}: ${value}\r\n`)])
+    });
+    request = concat([request, enc("\r\n")]);
+    request = concat([request, body]);
+
+    return request;
+}
 
 async function handleConnection(conn: Deno.Conn): Promise<void> {
     try {
@@ -85,12 +96,13 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
             }
             const data = buf.slice(0, nbytes);
             // concatenate the data being read in to the header bytes
-            headerBytes = todo();
+            headerBytes = concat([headerBytes, data]);
+            const idxDoubleCLRF = indexOfNeedle(headerBytes, DOUBLE_CRLF);
             // check for double CRLF
-            if (todo()) {
+            if (idxDoubleCLRF != -1) {
                 // slice out the header bytes from the start of the body
-                headerBytes = todo();
-                body = todo();
+                body = headerBytes.slice(idxDoubleCLRF + DOUBLE_CRLF.length);
+                headerBytes = headerBytes.slice(0, idxDoubleCLRF);
                 // exit the loop
                 break;
             }
@@ -101,28 +113,31 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         const decoded = dec(headerBytes, "latin1");
 
         // get the request line (first line) and the header list (every other line) from the decoded string
-        // hint: maybe consider splitting the decoded string?
-        const requestLine: string = todo();
-        const headerList: string[] = todo();
+        
+        const requestLine: string = decoded.substring(0, decoded.indexOf("\r\n"));
+        const headerList: string[] = decoded.substring(decoded.indexOf("\r\n") + 2).split("\r\n");
         // you may want to use the parseHeaders() function from above
-        const headers: Map<string, string> = todo();
+        const headers: Map<string, string> = parseHeaders(headerList);
 
         // Now that you have the headers, you can finish reading the body according to the content-length if needed
 
         // Determine your destination server on the backend using the host header
         // use the getBackend() function to determine all of the possible backends, and pick one
-        const destIp: string = todo();
+        const requestTarget = requestLine.split(" ")[1];
+        const destIp: string = "155.248.199.0:25563";
 
         // Forward the request to the backend!
-        // Make sure to send all of the original headers received as well as the body exactly as is (unless you are intentionally modifying it)
-        // You may want to create a constructResponse() function (not already provided) to help with this
-        // Useful methods: https://deno.land/api@v1.42.4?s=Deno.connect (Deno.connect()), conn.read(), conn.write()
-        todo();
+        // Use the Deno.connect() function to connect to the backend
+        const [hostname, port] = destIp.split(":");
+        const backendConn = await Deno.connect({ hostname: hostname, port: parseInt(port) });
 
+        // Construct the request to send to the backend, and write it to the backend connection
+        const request = constructRequest(requestLine, headers, body);
+        backendConn.write(request);
+        conn.readable.pipeTo(backendConn.writable);
 
-        // Receive the response from the backend. You can just pipe the response directly to the client.
-        // Useful methods/properties: conn.readable, conn.writable, readable.pipeTo(writable)
-        todo();
+        // Pipe the backend response back to the client
+        backendConn.readable.pipeTo(conn.writable);
     } catch (err) {
         // If an error occurs while processing the request, *attempt* to respond with an error to the client
         try {
@@ -143,7 +158,7 @@ if (import.meta.main) {
     const listener = Deno.listen({ port: 8080 });
 
     for await (const conn of listener) {
-        // we don't await this, why?
+        // don't await because want to handle multiple connections at once
         handleConnection(conn);
     }
 }
