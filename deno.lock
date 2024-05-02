@@ -1,0 +1,23 @@
+{
+  "version": "3",
+  "redirects": {
+    "https://deno.land/x/std/bytes/mod.ts": "https://deno.land/std@0.223.0/bytes/mod.ts"
+  },
+  "remote": {
+    "https://deno.land/std@0.223.0/bytes/concat.ts": "9cac3b4376afbef98ff03588eb3cf948e0d1eb6c27cfe81a7651ab6dd3adc54a",
+    "https://deno.land/std@0.223.0/bytes/copy.ts": "f29c03168853720dfe82eaa57793d0b9e3543ebfe5306684182f0f1e3bfd422a",
+    "https://deno.land/std@0.223.0/bytes/ends_with.ts": "7fcde176a52f0a5ba37917c4ddca04870939c81f72a8d85ada3d4ff8f45f56af",
+    "https://deno.land/std@0.223.0/bytes/equals.ts": "2a407bf9256800235c7bf9d923a1cf9a66f4dbd0ef8e7501c2f018e97a345a73",
+    "https://deno.land/std@0.223.0/bytes/includes_needle.ts": "f83d71db0b4287b2df0933d6d6b2934a382570652e806d3236f576b3e8c18ce7",
+    "https://deno.land/std@0.223.0/bytes/index_of_needle.ts": "c6cae31e7bceefaec83bde5e998295df0e09f3085adb43223357c11258740a1d",
+    "https://deno.land/std@0.223.0/bytes/last_index_of_needle.ts": "1d75764fca5766c0d0de2b9a962be892141c11d1c6d9b23bf5cf8668b30d8d8c",
+    "https://deno.land/std@0.223.0/bytes/mod.ts": "840a03a530e2309f96f3c0958aed9ba9c75f0c73da89b028b29f09dc849a894c",
+    "https://deno.land/std@0.223.0/bytes/repeat.ts": "0f8ae07ee9e7335208da2cc8a0fd3e0b17adb99fc0c68b105ba73e71b8f4aaad",
+    "https://deno.land/std@0.223.0/bytes/starts_with.ts": "e20e02cd5900116ac39a7e66e39aa02f04615fc981065ce9d483790af7d02cbb"
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@std/io@^0.223.0"
+    ]
+  }
+}
