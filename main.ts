@@ -1,5 +1,5 @@
 import { indexOfNeedle, concat } from "https://deno.land/std@0.223.0/bytes/mod.ts";
-import { log } from "./logging.ts";
+import { AccessLog, log } from "./logging.ts";
 
 const DOUBLE_CRLF = new Uint8Array([0xd, 0xa, 0xd, 0xa]);
 
@@ -161,6 +161,25 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         // Pipe the backend response back to the client
         await backendConn.readable.pipeTo(conn.writable);
+
+        //log successful request
+        const referer : string | undefined = headers.get("referer");
+        const  userAgent : string | undefined = headers.get("user-agent");
+
+        const accessLog : AccessLog = {
+            method: requestLine.split(" ")[0],
+            url: requestLine.split(" ")[1],
+            protocol: requestLine.split(" ")[2],
+            status: 200,
+            size: contentLength,
+            referer: referer? referer : "",
+            userAgent: userAgent? userAgent : "",
+            responseTime: 0,
+            upstream_response_time: 0,
+            backend: destIp[0].address
+        }
+
+        log("INFO", "Request successful", accessLog);
     } catch (err) {
         // If an error occurs while processing the request, *attempt* to respond with an error to the client
         try {

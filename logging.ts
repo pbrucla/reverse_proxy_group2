@@ -1,4 +1,20 @@
 
+
+// interface for a access log
+export interface AccessLog {
+    method: string,
+    url: string,
+    protocol: string,
+    status: number,
+    size: number,
+    referer: string,
+    userAgent: string,
+    responseTime: number,
+    upstream_response_time: number,
+    backend: string,
+}
+
+// basic logging function
 export async function log(logType: string, message: string, context: object = {}) {
     const entry = {
         timestamp: new Date().toISOString(),
