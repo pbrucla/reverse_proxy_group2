@@ -134,7 +134,8 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         const destIp: BackendInterface[] | undefined = getBackend(address);
 
         if(!destIp) {
-            throw new Error(`Backend not found for host ${address}`);
+            await conn.write(enc("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
+            return;
         }
 
         // Forward the request to the backend!
