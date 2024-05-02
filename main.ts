@@ -1,4 +1,5 @@
 import { indexOfNeedle, concat } from "https://deno.land/std@0.223.0/bytes/mod.ts";
+import { log } from "./logging.ts";
 
 const DOUBLE_CRLF = new Uint8Array([0xd, 0xa, 0xd, 0xa]);
 
