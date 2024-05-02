@@ -22,16 +22,17 @@ interface BackendInterface {
     port: number
 }
 
-function getBackend(host: string): BackendInterface[] {
+function getBackend(host: string): BackendInterface[] | undefined {
     // Given a host like example.com, return the backend IP address(es) that the request should be forwarded
     // You will also need to create some sort of config system to save this information
     const arrayOfHosts = new Map<string, BackendInterface[]>(
         [
-            ["example.com", [{address: "155.248.199.0", port: 25563}]]
+            ["cybrick.acmcyber.com", [{address: "155.248.199.0", port: 25561}]],
+            ["video.acmcyber.com", [{address: "155.248.199.0", port: 25563}]]
         ]
     )
     
-    return arrayOfHosts.get(host)!;
+    return arrayOfHosts.get(host);
 }
 
 function processHeader(line: string): [string, string] {
@@ -88,8 +89,6 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         // You also may want to use indexOfNeedle(data: Uint8Array, needle: Uint8Array), which returns the first index of the needle in the data, or -1 if not found
         // Make sure to use DOUBLE_CRLF for the needle instead of a string, as it must be a Uint8Array
         
-
-        
         
         // the buffer that we read into
         const buf = new Uint8Array(4096);
@@ -131,20 +130,35 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         // Determine your destination server on the backend using the host header
         // use the getBackend() function to determine all of the possible backends, and pick one
-        const address: string = headers.get("Host")!;   // get host from request header
-        const destIp: BackendInterface = getBackend(address)[0]; //TODO arbitrarily get the first backend for now
+        const address: string = headers.get("host")!;   // get host from request header
+        const destIp: BackendInterface[] | undefined = getBackend(address);
+
+        if(!destIp) {
+            throw new Error(`Backend not found for host ${address}`);
+        }
 
         // Forward the request to the backend!
         // Use the Deno.connect() function to connect to the backend
-        const backendConn = await Deno.connect({ hostname: destIp.address, port: destIp.port});
+        const backendConn = await Deno.connect({ hostname: destIp[0].address, port: destIp[0].port}); //TODO arbitrarily get the first backend for now
 
         // Construct the request to send to the backend, and write it to the backend connection
         const request = constructRequest(requestLine, headers, body);
-        backendConn.write(request);
-        conn.readable.pipeTo(backendConn.writable);
+        await backendConn.write(request);
+        let bodyBytesRead = body.byteLength;
+
+        // Write everything else from the connection
+        const contentLength = parseInt(headers.get("content-length")!);
+        while (bodyBytesRead < contentLength) { 
+            const nbytes = await conn.read(body);
+            if (nbytes === null) {
+                break;
+            }
+            (await backendConn).write(body.slice(0, nbytes));
+            bodyBytesRead += nbytes;
+        }
 
         // Pipe the backend response back to the client
-        backendConn.readable.pipeTo(conn.writable);
+        await backendConn.readable.pipeTo(conn.writable);
     } catch (err) {
         // If an error occurs while processing the request, *attempt* to respond with an error to the client
         try {
