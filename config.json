@@ -1,0 +1,7 @@
+{
+    "logging" : {
+        "logDir" : "logs/",
+        "infoLog" : "info_log.log",
+        "errorLog" : "error_log.log"
+    }
+}

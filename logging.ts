@@ -1,4 +1,18 @@
 
+import { join } from "https://deno.land/std@0.223.0/path/mod.ts";
+interface LoggingConfig {
+    logDir: string;
+    infoLog: string;
+    errorLog: string;
+}
+
+interface Config {
+    logging: LoggingConfig;
+}
+
+const config: Config = JSON.parse(await Deno.readTextFile('config.json'));
+const infoPath = join(config.logging.logDir, config.logging.infoLog);
+const errorPath = join(config.logging.logDir, config.logging.errorLog);
 
 // interface for a access log
 export interface AccessLog {
@@ -23,13 +37,15 @@ export async function log(logType: string, message: string, context: object = {}
         ...context,
     };
 
+    console.log(entry);
+
     try {
         switch(logType) {
             case "INFO":
-                await Deno.writeTextFile('info_log.txt', JSON.stringify(entry) + "\n", { append: true });
+                await Deno.writeTextFile(infoPath, JSON.stringify(entry) + "\n", { append: true });
                 break;
             case "ERROR":
-                await Deno.writeTextFile('error_log.txt', JSON.stringify(entry) + "\n", { append: true });
+                await Deno.writeTextFile(errorPath, JSON.stringify(entry) + "\n", { append: true });
                 break;
             default:
                 throw new Error(`Unknown log type: ${logType}`);
