@@ -11,11 +11,6 @@ function dec(x: Uint8Array, encoding?: string): string {
     return new TextDecoder(encoding).decode(x)
 }
 
-// utility function to mark areas that need to be done
-function todo<T>(): T {
-    const stack = new Error().stack;
-    throw new Error("Unfilled todo " + stack?.split("\n")?.[2]?.trim());
-}
 
 // Define the interface for a backend server
 interface BackendInterface {
