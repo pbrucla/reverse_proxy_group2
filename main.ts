@@ -90,7 +90,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         // You also may want to use indexOfNeedle(data: Uint8Array, needle: Uint8Array), which returns the first index of the needle in the data, or -1 if not found
         // Make sure to use DOUBLE_CRLF for the needle instead of a string, as it must be a Uint8Array
         
-        
+        console.log("Handling connection");
         // the buffer that we read into
         const buf = new Uint8Array(4096);
         // the bytes for the request line and the headers, not including the final double CRLF
@@ -136,6 +136,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         if(!destIp) {
             await conn.write(enc("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
+            log("ERROR", "Backend not found", {host: address, requestLine, headers, body});
             return;
         }
 
@@ -158,13 +159,10 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
             (await backendConn).write(body.slice(0, nbytes));
             bodyBytesRead += nbytes;
         }
-
-        // Pipe the backend response back to the client
-        await backendConn.readable.pipeTo(conn.writable);
-
+      
         //log successful request
         const referer : string | undefined = headers.get("referer");
-        const  userAgent : string | undefined = headers.get("user-agent");
+        const userAgent : string | undefined = headers.get("user-agent");
 
         const accessLog : AccessLog = {
             method: requestLine.split(" ")[0],
@@ -180,6 +178,9 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         }
 
         log("INFO", "Request successful", accessLog);
+
+        // Pipe the backend response back to the client
+        await backendConn.readable.pipeTo(conn.writable);
     } catch (err) {
         // If an error occurs while processing the request, *attempt* to respond with an error to the client
         try {
