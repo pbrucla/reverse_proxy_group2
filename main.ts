@@ -135,8 +135,8 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         const destIp: BackendInterface[] | undefined = getBackend(address);
 
         if(!destIp) {
-            await conn.write(enc("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
             log("ERROR", "Backend not found", {host: address, requestLine, headers, body});
+            await conn.write(enc("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
             return;
         }
 
@@ -184,7 +184,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
     } catch (err) {
         // If an error occurs while processing the request, *attempt* to respond with an error to the client
         try {
-            console.error(err);
+            log("ERROR", "Error processing request", {error: err});
             await conn.write(enc(`HTTP/1.1 500 Internal Server Error\r\nContent-Length: ${err.message.length}\r\nContent-Type: text/plain\r\n\r\n${err.message}`));
         } catch (_) {
             // do nothing

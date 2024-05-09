@@ -37,14 +37,15 @@ export async function log(logType: string, message: string, context: object = {}
         ...context,
     };
 
-    console.log(entry);
 
     try {
         switch(logType) {
             case "INFO":
+                console.log(entry);
                 await Deno.writeTextFile(infoPath, JSON.stringify(entry) + "\n", { append: true });
                 break;
             case "ERROR":
+                console.error(entry);
                 await Deno.writeTextFile(errorPath, JSON.stringify(entry) + "\n", { append: true });
                 break;
             default:
