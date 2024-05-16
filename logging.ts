@@ -47,8 +47,8 @@ export async function log(logType: string, message: string, context: object = {}
     }
 
     // request r/w permissions if needed
-    let readPerm = Deno.permissions.requestSync({name: "read"});
-    let writePerm = Deno.permissions.requestSync({name: "write"});
+    const readPerm = Deno.permissions.requestSync({name: "read"});
+    const writePerm = Deno.permissions.requestSync({name: "write"});
 
     if (readPerm.state === "denied") console.log("Deno does not have permission to read. Logging may be impossible.\n");
     if (writePerm.state === "denied") console.log("deno does not have permission to write. Editing or creating new log filels may be impossible.\n")
