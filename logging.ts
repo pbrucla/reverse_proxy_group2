@@ -41,7 +41,7 @@ export async function log(logType: string, message: string, context: object = {}
     try {
         await Deno.mkdir(config.logging.logDir);
     } catch (error) {
-        if (error.name !== "AlreadyExists") {
+        if (!(error instanceof Deno.errors.AlreadyExists)) {
             console.error(`Failed to create log directory: ${error}`);
         }
     }
