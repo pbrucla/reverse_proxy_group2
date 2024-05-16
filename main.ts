@@ -1,4 +1,5 @@
 import { indexOfNeedle, concat } from "https://deno.land/std@0.223.0/bytes/mod.ts";
+import { addCache,checkCache } from "./cache.ts";
 import { AccessLog, log, requestLoggingPermissions } from "./logging.ts";
 
 const DOUBLE_CRLF = new Uint8Array([0xd, 0xa, 0xd, 0xa]);
@@ -88,15 +89,17 @@ function constructResponse(statusLine: string, headers: Map<string, string>, bod
 }
 
 async function handleConnection(conn: Deno.Conn): Promise<void> {
-    try {
+    console.log("Handling connection");
+    sendConnection: try {
         // Read & process in all headers
         // Reminder: the headers continue until you reach 2 CRLFs in a row, and technically can be any arbitrary size, and that the first line in the request is NOT a header
-        // That being said, for efficiency and to prevent DOS attacks that flood the reverse proxy with unlimited data it tries to process, 
+        // That being said, for efficiency and to prevent DOS attacks that flood the reverse proxy with unlimited data it tries to process,
         // Many popular reverse proxy software like nginx do not allow arbitrary size headers, and have a cap at 8KB.
         // If a too large header is given, it errors out with a 431 request header too large. Stick to a 400 if you choose to go this route.
         // Or if you want to cap or allow unlimited headers: note that you may want portion of the HTTP messageto use the parseHeaders(), which accepts the string of all the headers
         // You also may want to use indexOfNeedle(data: Uint8Array, needle: Uint8Array), which returns the first index of the needle in the data, or -1 if not found
         // Make sure to use DOUBLE_CRLF for the needle instead of a string, as it must be a Uint8Array
+        
         
         // the buffer that we read into
         const buf = new Uint8Array(4096);
@@ -130,7 +133,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         const decoded = dec(headerBytes, "latin1");
 
         // get the request line (first line) and the header list (every other line) from the decoded string
-        
+
         const requestLine: string = decoded.substring(0, decoded.indexOf("\r\n"));
         const headerList: string[] = decoded.substring(decoded.indexOf("\r\n") + 2).split("\r\n");
         // you may want to use the parseHeaders() function from above
@@ -138,10 +141,19 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         // Determine your destination server on the backend using the host header
         // use the getBackend() function to determine all of the possible backends, and pick one
-        const address: string = headers.get("host")!;   // get host from request header
+        const address: string = headers.get("host")!; // get host from request header
         const destIp: BackendInterface[] | undefined = getBackend(address);
 
-        if(!destIp) {
+        // Check if cached
+        const cachedResponse = await checkCache(address);
+        if (cachedResponse) {
+            console.log("Response received");
+            console.log(cachedResponse);
+            await cachedResponse.body?.pipeTo(conn.writable);
+            break sendConnection;
+        }
+
+        if (!destIp) {
             log("ERROR", "Backend not found", {host: address, requestLine, headers, body});
             await conn.write(enc("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
             return;
@@ -149,7 +161,10 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         // Forward the request to the backend!
         // Use the Deno.connect() function to connect to the backend
-        const backendConn = await Deno.connect({ hostname: destIp[0].address, port: destIp[0].port}); //TODO arbitrarily get the first backend for now
+        const backendConn = await Deno.connect({
+            hostname: destIp[0].address,
+            port: destIp[0].port,
+        }); //TODO arbitrarily get the first backend for now
 
         // Construct the request to send to the backend, and write it to the backend connection
         const request = constructRequest(requestLine, headers, body);
@@ -158,7 +173,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         // Write everything else from the connection
         const contentLength = parseInt(headers.get("content-length")!);
-        while (bodyBytesRead < contentLength) { 
+        while (bodyBytesRead < contentLength) {
             const nbytes = await conn.read(body);
             if (nbytes === null) {
                 break;
@@ -166,73 +181,9 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
             (await backendConn).write(body.slice(0, nbytes));
             bodyBytesRead += nbytes;
         }
-      
-        //log successful request
-        const referer : string | undefined = headers.get("referer");
-        const userAgent : string | undefined = headers.get("user-agent");
 
-        const accessLog : AccessLog = {
-            method: requestLine.split(" ")[0],
-            url: requestLine.split(" ")[1],
-            protocol: requestLine.split(" ")[2],
-            status: 200,
-            size: contentLength,
-            referer: referer? referer : "",
-            userAgent: userAgent? userAgent : "",
-            responseTime: 0,
-            upstream_response_time: 0,
-            backend: destIp[0].address
-        }
-
-        log("INFO", "Request successful", accessLog);
-
-        // Read the response from the backend and write it back to the client
-        
-        body = new Uint8Array(0);
-        headerBytes = new Uint8Array(0);
-        while (true) {
-            const nbytes = await backendConn.read(buf);
-            if (nbytes === null) {
-                break;
-            }
-            const data = buf.slice(0, nbytes);
-            // concatenate the data being read in to the header bytes
-            headerBytes = concat([headerBytes, data]);
-            const idxDoubleCLRF = indexOfNeedle(headerBytes, DOUBLE_CRLF);
-            // check for double CRLF
-            if (idxDoubleCLRF != -1) {
-                // slice out the header bytes from the start of the body
-                body = headerBytes.slice(idxDoubleCLRF + DOUBLE_CRLF.length);
-                headerBytes = headerBytes.slice(0, idxDoubleCLRF);
-                // exit the loop
-                break;
-            }
-        }
-        
-        const decodedResponseHeaders = dec(headerBytes, "latin1");
-        
-        const statusLine: string = decodedResponseHeaders.substring(0, decodedResponseHeaders.indexOf("\r\n"));
-        const responseHeaderList: string[] = decodedResponseHeaders.substring(decodedResponseHeaders.indexOf("\r\n") + 2).split("\r\n");
-        const responseHeaders: Map<string, string> = parseHeaders(responseHeaderList);
-        console.log(responseHeaders);
-        
-        // Construct the response to send back to client, and write it to the client connection
-        const response = constructResponse(statusLine, responseHeaders, body);
-        await conn.write(response);
-        bodyBytesRead = body.byteLength;
-
-        // Write everything else from the connection
-        const responseContentLength = parseInt(responseHeaders.get("content-length")!);
-        while (bodyBytesRead < responseContentLength) { 
-            const nbytes = await backendConn.read(body);
-            if (nbytes === null) {
-                break;
-            }
-            (await conn).write(body.slice(0, nbytes));
-            bodyBytesRead += nbytes;
-        }
-
-
+        // Pipe the backend response back to the client
+        await backendConn.readable.pipeTo(conn.writable);
     } catch (err) {
         // If an error occurs while processing the request, *attempt* to respond with an error to the client
         try {
