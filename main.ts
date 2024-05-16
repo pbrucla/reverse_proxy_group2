@@ -1,4 +1,5 @@
 import { indexOfNeedle, concat } from "https://deno.land/std@0.223.0/bytes/mod.ts";
+import { AccessLog, log } from "./logging.ts";
 
 const DOUBLE_CRLF = new Uint8Array([0xd, 0xa, 0xd, 0xa]);
 
@@ -10,11 +11,6 @@ function dec(x: Uint8Array, encoding?: string): string {
     return new TextDecoder(encoding).decode(x)
 }
 
-// utility function to mark areas that need to be done
-function todo<T>(): T {
-    const stack = new Error().stack;
-    throw new Error("Unfilled todo " + stack?.split("\n")?.[2]?.trim());
-}
 
 // Define the interface for a backend server
 interface BackendInterface {
@@ -89,7 +85,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         // You also may want to use indexOfNeedle(data: Uint8Array, needle: Uint8Array), which returns the first index of the needle in the data, or -1 if not found
         // Make sure to use DOUBLE_CRLF for the needle instead of a string, as it must be a Uint8Array
         
-        
+        console.log("Handling connection");
         // the buffer that we read into
         const buf = new Uint8Array(4096);
         // the bytes for the request line and the headers, not including the final double CRLF
@@ -134,6 +130,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         const destIp: BackendInterface[] | undefined = getBackend(address);
 
         if(!destIp) {
+            log("ERROR", "Backend not found", {host: address, requestLine, headers, body});
             await conn.write(enc("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
             return;
         }
@@ -157,13 +154,32 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
             (await backendConn).write(body.slice(0, nbytes));
             bodyBytesRead += nbytes;
         }
+      
+        //log successful request
+        const referer : string | undefined = headers.get("referer");
+        const userAgent : string | undefined = headers.get("user-agent");
+
+        const accessLog : AccessLog = {
+            method: requestLine.split(" ")[0],
+            url: requestLine.split(" ")[1],
+            protocol: requestLine.split(" ")[2],
+            status: 200,
+            size: contentLength,
+            referer: referer? referer : "",
+            userAgent: userAgent? userAgent : "",
+            responseTime: 0,
+            upstream_response_time: 0,
+            backend: destIp[0].address
+        }
+
+        log("INFO", "Request successful", accessLog);
 
         // Pipe the backend response back to the client
         await backendConn.readable.pipeTo(conn.writable);
     } catch (err) {
         // If an error occurs while processing the request, *attempt* to respond with an error to the client
         try {
-            console.error(err);
+            log("ERROR", "Error processing request", {error: err});
             await conn.write(enc(`HTTP/1.1 500 Internal Server Error\r\nContent-Length: ${err.message.length}\r\nContent-Type: text/plain\r\n\r\n${err.message}`));
         } catch (_) {
             // do nothing

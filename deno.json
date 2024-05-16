@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "dev": "deno run --allow-net --allow-read=config.json --check --watch main2.ts"
+    "dev": "deno run --allow-net --allow-read=config.json --allow-write=./logs/ --check --watch main.ts"
   },
   "imports": { "@std/io": "jsr:@std/io@^0.223.0" }
 }
