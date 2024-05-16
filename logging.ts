@@ -37,14 +37,6 @@ export async function log(logType: string, message: string, context: object = {}
         ...context,
     };
 
-    // if the logs directory does not exist, create it
-    try {
-        await Deno.mkdir(config.logging.logDir);
-    } catch (error) {
-        if (!(error instanceof Deno.errors.AlreadyExists)) {
-            console.error(`Failed to create log directory: ${error}`);
-        }
-    }
 
     // request r/w permissions if needed
     const readPerm = Deno.permissions.requestSync({name: "read"});
@@ -54,6 +46,14 @@ export async function log(logType: string, message: string, context: object = {}
     if (writePerm.state === "denied") console.log("deno does not have permission to write. Editing or creating new log filels may be impossible.\n")
 
 
+    // if the logs directory does not exist, create it
+    try {
+        await Deno.mkdir(config.logging.logDir);
+    } catch (error) {
+        if (!(error instanceof Deno.errors.AlreadyExists)) {
+            console.error(`Failed to create log directory: ${error}`);
+        }
+    }
 
 
     try {
