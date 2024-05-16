@@ -46,7 +46,7 @@ export async function log(logType: string, message: string, context: object = {}
         }
     }
 
-    // spit out errors in console if r/w permissions don't exist, and request if needed
+    // request r/w permissions if needed
     let readPerm = Deno.permissions.requestSync({name: "read"});
     let writePerm = Deno.permissions.requestSync({name: "write"});
 
