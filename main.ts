@@ -74,6 +74,19 @@ function constructRequest(requestLine: string, headers: Map<string, string>, bod
     return request;
 }
 
+function constructResponse(statusLine: string, headers: Map<string, string>, body: Uint8Array): Uint8Array {
+    // Given the status line, headers, and body, return the response to send to the client.
+
+    let response = enc(statusLine + "\r\n");
+    headers.forEach((value, key) => {
+        response = concat([response, enc(`${key}: ${value}\r\n`)])
+    });
+    response = concat([response, enc("\r\n")]);
+    response = concat([response, body]);
+
+    return response;
+}
+
 async function handleConnection(conn: Deno.Conn): Promise<void> {
     try {
         // Read & process in all headers
@@ -85,7 +98,6 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         // You also may want to use indexOfNeedle(data: Uint8Array, needle: Uint8Array), which returns the first index of the needle in the data, or -1 if not found
         // Make sure to use DOUBLE_CRLF for the needle instead of a string, as it must be a Uint8Array
         
-        console.log("Handling connection");
         // the buffer that we read into
         const buf = new Uint8Array(4096);
         // the bytes for the request line and the headers, not including the final double CRLF
@@ -174,8 +186,53 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         log("INFO", "Request successful", accessLog);
 
-        // Pipe the backend response back to the client
-        await backendConn.readable.pipeTo(conn.writable);
+        // Read the response from the backend and write it back to the client
+        
+        body = new Uint8Array(0);
+        headerBytes = new Uint8Array(0);
+        while (true) {
+            const nbytes = await backendConn.read(buf);
+            if (nbytes === null) {
+                break;
+            }
+            const data = buf.slice(0, nbytes);
+            // concatenate the data being read in to the header bytes
+            headerBytes = concat([headerBytes, data]);
+            const idxDoubleCLRF = indexOfNeedle(headerBytes, DOUBLE_CRLF);
+            // check for double CRLF
+            if (idxDoubleCLRF != -1) {
+                // slice out the header bytes from the start of the body
+                body = headerBytes.slice(idxDoubleCLRF + DOUBLE_CRLF.length);
+                headerBytes = headerBytes.slice(0, idxDoubleCLRF);
+                // exit the loop
+                break;
+            }
+        }
+        
+        const decodedResponseHeaders = dec(headerBytes, "latin1");
+        
+        const statusLine: string = decodedResponseHeaders.substring(0, decodedResponseHeaders.indexOf("\r\n"));
+        const responseHeaderList: string[] = decodedResponseHeaders.substring(decodedResponseHeaders.indexOf("\r\n") + 2).split("\r\n");
+        const responseHeaders: Map<string, string> = parseHeaders(responseHeaderList);
+        console.log(responseHeaders);
+        
+        // Construct the response to send back to client, and write it to the client connection
+        const response = constructResponse(statusLine, responseHeaders, body);
+        await conn.write(response);
+        bodyBytesRead = body.byteLength;
+
+        // Write everything else from the connection
+        const responseContentLength = parseInt(responseHeaders.get("content-length")!);
+        while (bodyBytesRead < responseContentLength) { 
+            const nbytes = await backendConn.read(body);
+            if (nbytes === null) {
+                break;
+            }
+            (await conn).write(body.slice(0, nbytes));
+            bodyBytesRead += nbytes;
+        }
+
+
     } catch (err) {
         // If an error occurs while processing the request, *attempt* to respond with an error to the client
         try {
@@ -185,6 +242,8 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
             // do nothing
         }
     }
+
+    // close
     try {
         conn.close();
     } catch (_) {
