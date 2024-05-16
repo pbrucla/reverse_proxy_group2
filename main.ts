@@ -40,7 +40,7 @@ function processHeader(line: string): [string, string] {
     // Example output: ["content-length", "42"]
 
     const name: string = line.split(":")[0].toLowerCase().trim();
-    const value: string = line.split(":")[1].trim();
+    const value: string = line.split(":").slice(1).join(":").trim();
     
     return [name, value];
 }
