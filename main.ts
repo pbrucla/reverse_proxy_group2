@@ -1,5 +1,5 @@
 import { indexOfNeedle, concat } from "https://deno.land/std@0.223.0/bytes/mod.ts";
-import { AccessLog, log } from "./logging.ts";
+import { AccessLog, log, requestLoggingPermissions } from "./logging.ts";
 
 const DOUBLE_CRLF = new Uint8Array([0xd, 0xa, 0xd, 0xa]);
 
@@ -40,7 +40,7 @@ function processHeader(line: string): [string, string] {
     // Example output: ["content-length", "42"]
 
     const name: string = line.split(":")[0].toLowerCase().trim();
-    const value: string = line.split(":")[1].trim();
+    const value: string = line.split(":").slice(1).join(":").trim();
     
     return [name, value];
 }
@@ -194,6 +194,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
 if (import.meta.main) {
     const listener = Deno.listen({ port: 8080 });
+    requestLoggingPermissions();
 
     for await (const conn of listener) {
         // don't await because want to handle multiple connections at once
