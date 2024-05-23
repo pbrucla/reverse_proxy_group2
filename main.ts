@@ -24,8 +24,8 @@ function getBackend(host: string): BackendInterface[] | undefined {
     // You will also need to create some sort of config system to save this information
     const arrayOfHosts = new Map<string, BackendInterface[]>(
         [
-            ["cybrick.acmcyber.com", [{address: "155.248.199.0", port: 25561}]],
-            ["video.acmcyber.com", [{address: "155.248.199.0", port: 25563}]]
+            ["cybrick.acmcyber.com:8080", [{address: "155.248.199.0", port: 25561}]],
+            ["video.acmcyber.com:8080", [{address: "155.248.199.0", port: 25563}]]
         ]
     )
     
@@ -143,9 +143,11 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         // use the getBackend() function to determine all of the possible backends, and pick one
         const address: string = headers.get("host")!; // get host from request header
         const destIp: BackendInterface[] | undefined = getBackend(address);
+        console.log(address);
 
         // Check if cached
         const cachedResponse = await checkCache(address);
+        console.log("Checking for cache");
         if (cachedResponse) {
             console.log("Response received");
             console.log(cachedResponse);
@@ -182,8 +184,23 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
             bodyBytesRead += nbytes;
         }
 
+        console.log("Adding cache");
+        const serverReadableStream = backendConn.readable;
+        // const read = await readable.getReader().read();
+        await addCache(address, serverReadableStream);
+        // await serverReadableStream.pipeTo(conn.writable);
+
+        console.log("Added cache");
+        const newResponse = await checkCache(address);
+        console.log("Retrieved cache");
+        console.log(newResponse?.body);
+        if (newResponse) {
+            await newResponse.body?.pipeTo(conn.writable);
+            break sendConnection;
+        }
+        
         // Pipe the backend response back to the client
-        await backendConn.readable.pipeTo(conn.writable);
+        // await backendConn.readable.pipeTo(conn.writable);
     } catch (err) {
         // If an error occurs while processing the request, *attempt* to respond with an error to the client
         try {
