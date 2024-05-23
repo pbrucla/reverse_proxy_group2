@@ -91,8 +91,6 @@ function constructResponse(statusLine: string, headers: Map<string, string>, bod
 async function handleConnection(conn: Deno.Conn): Promise<void> {
     console.log("Handling connection");
     sendConnection: try {
-    console.log("Handling connection");
-    sendConnection: try {
         // Read & process in all headers
         // Reminder: the headers continue until you reach 2 CRLFs in a row, and technically can be any arbitrary size, and that the first line in the request is NOT a header
         // That being said, for efficiency and to prevent DOS attacks that flood the reverse proxy with unlimited data it tries to process,
@@ -144,7 +142,6 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         // Determine your destination server on the backend using the host header
         // use the getBackend() function to determine all of the possible backends, and pick one
         const address: string = headers.get("host")!; // get host from request header
-        const address: string = headers.get("host")!; // get host from request header
         const destIp: BackendInterface[] | undefined = getBackend(address);
         console.log(address);
 
@@ -170,10 +167,6 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
             hostname: destIp[0].address,
             port: destIp[0].port,
         }); //TODO arbitrarily get the first backend for now
-        const backendConn = await Deno.connect({
-            hostname: destIp[0].address,
-            port: destIp[0].port,
-        }); //TODO arbitrarily get the first backend for now
 
         // Construct the request to send to the backend, and write it to the backend connection
         const request = constructRequest(requestLine, headers, body);
@@ -182,7 +175,6 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         // Write everything else from the connection
         const contentLength = parseInt(headers.get("content-length")!);
-        while (bodyBytesRead < contentLength) {
         while (bodyBytesRead < contentLength) {
             const nbytes = await conn.read(body);
             if (nbytes === null) {
