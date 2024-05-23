@@ -3,6 +3,29 @@ import { AccessLog, log, requestLoggingPermissions } from "./logging.ts";
 
 const DOUBLE_CRLF = new Uint8Array([0xd, 0xa, 0xd, 0xa]);
 
+const arrayOfHosts = new Map<string, BackendInterface[]>(
+    [
+        ["cybrick.acmcyber.com", [{address: "155.248.199.0", port: 25561}, {address: "155.248.199.0", port: 25562}]],
+        ["video.acmcyber.com", [{address: "155.248.199.0", port: 25563}]],
+        //[{http://155.248.199.0, port: 25561}
+        //http://155.248.199.0, port: 25562
+    ]
+)
+
+interface usageInterface {
+    weight: number,
+    currentUsage: number
+}
+
+const weights = new Map<string, usageInterface>(
+    [
+        ["155.248.199.0:25561", {weight: 123, currentUsage: 0}],
+        ["155.248.199.0:25562", {weight: 60, currentUsage: 0}],
+        ["155.248.199.0:25563", {weight: 123, currentUsage: 0}],
+    ]
+)
+
+
 // utility functions to encode and decode to/from Uint8Array
 function enc(x: string): Uint8Array {
     return new TextEncoder().encode(x)
@@ -21,12 +44,6 @@ interface BackendInterface {
 function getBackend(host: string): BackendInterface[] | undefined {
     // Given a host like example.com, return the backend IP address(es) that the request should be forwarded
     // You will also need to create some sort of config system to save this information
-    const arrayOfHosts = new Map<string, BackendInterface[]>(
-        [
-            ["cybrick.acmcyber.com", [{address: "155.248.199.0", port: 25561}]],
-            ["video.acmcyber.com", [{address: "155.248.199.0", port: 25563}]]
-        ]
-    )
     
     return arrayOfHosts.get(host);
 }
@@ -38,7 +55,6 @@ function processHeader(line: string): [string, string] {
     // Values can contain whitespace in the middle which should be kept, e.g. "User-Agent: Mozilla/5.0 Chrome/91.0"
     // Example input: "Content-Length: 42"
     // Example output: ["content-length", "42"]
-
     const name: string = line.split(":")[0].toLowerCase().trim();
     const value: string = line.split(":").slice(1).join(":").trim();
     
@@ -74,6 +90,61 @@ function constructRequest(requestLine: string, headers: Map<string, string>, bod
     return request;
 }
 
+function loadBalance(dest?: BackendInterface[]): BackendInterface | undefined {
+
+    if (dest == undefined){
+        return;
+    }
+    
+    let index;
+    let min = Number.MAX_SAFE_INTEGER;
+    
+    for (const i of dest){
+        const addr = `${i.address}:${i.port}`
+        if (addr == undefined){
+            return undefined;
+        }
+        const a = weights.get(addr);
+        if ( a == undefined){
+            throw new Error("asdasdasd1");
+            return undefined;
+        }
+
+        if (a.currentUsage < min){
+            min = a.currentUsage;
+            index = i;
+        }
+    }
+
+    if (index == undefined){
+        throw new Error("asdasdasd2");
+        //return undefined;
+    }
+    const item = weights.get(`${index.address}:${index.port}`);
+    if (item == undefined){
+        throw new Error("asdasdasd3");
+         //undefined;
+    }
+
+    weights.set(`${index.address}:${index.port}`, {weight: item.weight,currentUsage: item.currentUsage + item.weight}); //its gonna do sketchy stuff sometim
+    console.log(`Adding connection to ${JSON.stringify(index)}`);
+    return index;
+    //return dest[Math.floor((Math.random()*dest.length))]; 
+}
+
+function unloadWeight(dest?: BackendInterface): boolean {
+    if (dest == undefined){
+        return false;
+    }
+    const item = weights.get(`${dest.address}:${dest.port}`);
+    if (item == undefined){
+        return false;
+    }
+    weights.set(`${dest.address}:${dest.port}`, {weight: item.weight,currentUsage: item.currentUsage - item.weight}); //its gonna do sketchy stuff sometim
+    console.log(`Closing connection to ${JSON.stringify(dest)}`)
+    return true;
+}
+
 function constructResponse(statusLine: string, headers: Map<string, string>, body: Uint8Array): Uint8Array {
     // Given the status line, headers, and body, return the response to send to the client.
 
@@ -88,6 +159,7 @@ function constructResponse(statusLine: string, headers: Map<string, string>, bod
 }
 
 async function handleConnection(conn: Deno.Conn): Promise<void> {
+    let destIp: BackendInterface | undefined;
     try {
         // Read & process in all headers
         // Reminder: the headers continue until you reach 2 CRLFs in a row, and technically can be any arbitrary size, and that the first line in the request is NOT a header
@@ -139,7 +211,8 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         // Determine your destination server on the backend using the host header
         // use the getBackend() function to determine all of the possible backends, and pick one
         const address: string = headers.get("host")!;   // get host from request header
-        const destIp: BackendInterface[] | undefined = getBackend(address);
+        destIp = loadBalance(getBackend(address)); //TODO
+        //add splitting of servers
 
         if(!destIp) {
             log("ERROR", "Backend not found", {host: address, requestLine, headers, body});
@@ -149,9 +222,10 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         // Forward the request to the backend!
         // Use the Deno.connect() function to connect to the backend
-        const backendConn = await Deno.connect({ hostname: destIp[0].address, port: destIp[0].port}); //TODO arbitrarily get the first backend for now
+        const backendConn = await Deno.connect({ hostname: destIp.address, port: destIp.port}); //TODO arbitrarily get the first backend for now
 
         // Construct the request to send to the backend, and write it to the backend connection
+        headers.set("connection", "close");
         const request = constructRequest(requestLine, headers, body);
         await backendConn.write(request);
         let bodyBytesRead = body.byteLength;
@@ -163,7 +237,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
             if (nbytes === null) {
                 break;
             }
-            (await backendConn).write(body.slice(0, nbytes));
+            await backendConn.write(body.slice(0, nbytes));
             bodyBytesRead += nbytes;
         }
       
@@ -247,8 +321,10 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
     try {
         conn.close();
     } catch (_) {
+
         // do nothing
     }
+    unloadWeight(destIp);
 }
 
 if (import.meta.main) {
