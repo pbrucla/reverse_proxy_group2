@@ -3,5 +3,16 @@
         "logDir" : "logs/", 
         "infoLog" : "info_log.log",
         "errorLog" : "error_log.log"
-    }
+    },
+    "accounts" : [
+        {
+            "username" : "admin",
+            "password" : "$2a$10$plZXm/1hy0v/tO/7R2sTDOqFPk/B.NB5TVek0A41e4bFQpXOITdTm"
+        },
+        {
+            "username" : "user",
+            "password" : "$2a$10$plZXm/1hy0v/tO/7R2sTDOqFPk/B.NB5TVek0A41e4bFQpXOITdTm"
+        }
+    ],
+    "requireAuth" : true
 }
