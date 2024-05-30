@@ -309,8 +309,6 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
     }
 }
 
-//
-
 interface Account {
     username: string;
     password: string;
