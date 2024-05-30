@@ -102,44 +102,53 @@ function constructResponse(statusLine: string, headers: Map<string, string>, bod
 }
 
 async function handleRequest(conn: Deno.Conn): Promise<RequestData> {
-        // the buffer that we read into
-        const buf = new Uint8Array(4096);
-        // the bytes for the request line and the headers, not including the final double CRLF
-        let headerBytes = new Uint8Array(0);
-        // the start of the body, in case there's some leftover data after the double CRLF
-        // there's no guarantee this will be the entire body
-        // we'll need to check content-length and keep reading after header parsing is over
-        let body = new Uint8Array(0);
-        while (true) {
-            const nbytes = await conn.read(buf);
-            if (nbytes === null) {
-                break;
-            }
-            const data = buf.slice(0, nbytes);
-            // concatenate the data being read in to the header bytes
-            headerBytes = concat([headerBytes, data]);
-            const idxDoubleCLRF = indexOfNeedle(headerBytes, DOUBLE_CRLF);
-            // check for double CRLF
-            if (idxDoubleCLRF != -1) {
-                // slice out the header bytes from the start of the body
-                body = headerBytes.slice(idxDoubleCLRF + DOUBLE_CRLF.length);
-                headerBytes = headerBytes.slice(0, idxDoubleCLRF);
-                // exit the loop
-                break;
-            }
+    // Read & process in all headers
+    // Reminder: the headers continue until you reach 2 CRLFs in a row, and technically can be any arbitrary size, and that the first line in the request is NOT a header
+    // That being said, for efficiency and to prevent DOS attacks that flood the reverse proxy with unlimited data it tries to process, 
+    // Many popular reverse proxy software like nginx do not allow arbitrary size headers, and have a cap at 8KB.
+    // If a too large header is given, it errors out with a 431 request header too large. Stick to a 400 if you choose to go this route.
+    // Or if you want to cap or allow unlimited headers: note that you may want portion of the HTTP messageto use the parseHeaders(), which accepts the string of all the headers
+    // You also may want to use indexOfNeedle(data: Uint8Array, needle: Uint8Array), which returns the first index of the needle in the data, or -1 if not found
+    // Make sure to use DOUBLE_CRLF for the needle instead of a string, as it must be a Uint8Array
+
+    // the buffer that we read into
+    const buf = new Uint8Array(4096);
+    // the bytes for the request line and the headers, not including the final double CRLF
+    let headerBytes = new Uint8Array(0);
+    // the start of the body, in case there's some leftover data after the double CRLF
+    // there's no guarantee this will be the entire body
+    // we'll need to check content-length and keep reading after header parsing is over
+    let body = new Uint8Array(0);
+    while (true) {
+        const nbytes = await conn.read(buf);
+        if (nbytes === null) {
+            break;
         }
+        const data = buf.slice(0, nbytes);
+        // concatenate the data being read in to the header bytes
+        headerBytes = concat([headerBytes, data]);
+        const idxDoubleCLRF = indexOfNeedle(headerBytes, DOUBLE_CRLF);
+        // check for double CRLF
+        if (idxDoubleCLRF != -1) {
+            // slice out the header bytes from the start of the body
+            body = headerBytes.slice(idxDoubleCLRF + DOUBLE_CRLF.length);
+            headerBytes = headerBytes.slice(0, idxDoubleCLRF);
+            // exit the loop
+            break;
+        }
+    }
 
-        // HTTP uses ISO-8559-1 encoding (latin1) for headers
-        const decoded = dec(headerBytes, "latin1");
+    // HTTP uses ISO-8559-1 encoding (latin1) for headers
+    const decoded = dec(headerBytes, "latin1");
 
-        // get the request line (first line) and the header list (every other line) from the decoded string
-        
-        const requestLine: string = decoded.substring(0, decoded.indexOf("\r\n"));
-        const headerList: string[] = decoded.substring(decoded.indexOf("\r\n") + 2).split("\r\n");
-        // you may want to use the parseHeaders() function from above
-        const headers: Map<string, string> = parseHeaders(headerList);
+    // get the request line (first line) and the header list (every other line) from the decoded string
+    
+    const requestLine: string = decoded.substring(0, decoded.indexOf("\r\n"));
+    const headerList: string[] = decoded.substring(decoded.indexOf("\r\n") + 2).split("\r\n");
+    // you may want to use the parseHeaders() function from above
+    const headers: Map<string, string> = parseHeaders(headerList);
 
-        return {requestLine, headers, body};
+    return {requestLine, headers, body};
 }
 
 function requestAuth() : Uint8Array {
@@ -184,7 +193,7 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         // ============================================= Authentication ==========================================================
 
         // TODO: Check if the particular backend requires authentication
-        if(true) { 
+        if(requireAuth) { 
             // check for authorization header
             if(!originalRequest.headers.has("authorization")) {
                 await conn.write(requestAuth());
@@ -316,11 +325,14 @@ interface Account {
 
 interface Config {
     accounts: Account[];
+    requireAuth: boolean;
 }
 
 // read in the accounts from the config
 const config: Config = JSON.parse(await Deno.readTextFile('config.json'));
 const accounts = config.accounts;
+
+const requireAuth : boolean = config.requireAuth;
 
 // generate a hash!
 // console.log(await hash("password"));

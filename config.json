@@ -13,5 +13,6 @@
             "username" : "user",
             "password" : "$2a$10$plZXm/1hy0v/tO/7R2sTDOqFPk/B.NB5TVek0A41e4bFQpXOITdTm"
         }
-    ]
+    ],
+    "requireAuth" : true
 }
