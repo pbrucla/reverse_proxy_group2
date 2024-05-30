@@ -1,6 +1,13 @@
 import { indexOfNeedle, concat } from "https://deno.land/std@0.223.0/bytes/mod.ts";
 import { AccessLog, log, requestLoggingPermissions } from "./logging.ts";
 
+import {
+    encodeBase64,
+    decodeBase64,
+} from "https://deno.land/std@0.224.0/encoding/base64.ts";
+
+import {hash, compare } from "https://deno.land/x/bcrypt/mod.ts";
+
 const DOUBLE_CRLF = new Uint8Array([0xd, 0xa, 0xd, 0xa]);
 
 // utility functions to encode and decode to/from Uint8Array
@@ -10,7 +17,6 @@ function enc(x: string): Uint8Array {
 function dec(x: Uint8Array, encoding?: string): string {
     return new TextDecoder(encoding).decode(x)
 }
-
 
 // Define the interface for a backend server
 interface BackendInterface {
@@ -23,12 +29,19 @@ function getBackend(host: string): BackendInterface[] | undefined {
     // You will also need to create some sort of config system to save this information
     const arrayOfHosts = new Map<string, BackendInterface[]>(
         [
-            ["cybrick.acmcyber.com", [{address: "155.248.199.0", port: 25561}]],
-            ["video.acmcyber.com", [{address: "155.248.199.0", port: 25563}]]
+            ["cybrick.acmcyber.com:8080", [{address: "155.248.199.0", port: 25561}]],
+            ["video.acmcyber.com:8080", [{address: "155.248.199.0", port: 25563}]]
         ]
     )
-    
     return arrayOfHosts.get(host);
+}
+
+
+// define request data interface
+interface RequestData {
+    requestLine: string,
+    headers: Map<string, string>,
+    body: Uint8Array
 }
 
 function processHeader(line: string): [string, string] {
@@ -61,7 +74,8 @@ function parseHeaders(headers: string[]): Map<string, string> {
     return parsedHeaders;
 }
 
-function constructRequest(requestLine: string, headers: Map<string, string>, body: Uint8Array): Uint8Array {
+function constructRequest(requestData : RequestData): Uint8Array {
+    const {requestLine, headers, body} = requestData;
     // Given the request line, headers, and body, return the response to send to the client.
 
     let request = enc(requestLine + "\r\n");
@@ -87,17 +101,7 @@ function constructResponse(statusLine: string, headers: Map<string, string>, bod
     return response;
 }
 
-async function handleConnection(conn: Deno.Conn): Promise<void> {
-    try {
-        // Read & process in all headers
-        // Reminder: the headers continue until you reach 2 CRLFs in a row, and technically can be any arbitrary size, and that the first line in the request is NOT a header
-        // That being said, for efficiency and to prevent DOS attacks that flood the reverse proxy with unlimited data it tries to process, 
-        // Many popular reverse proxy software like nginx do not allow arbitrary size headers, and have a cap at 8KB.
-        // If a too large header is given, it errors out with a 431 request header too large. Stick to a 400 if you choose to go this route.
-        // Or if you want to cap or allow unlimited headers: note that you may want portion of the HTTP messageto use the parseHeaders(), which accepts the string of all the headers
-        // You also may want to use indexOfNeedle(data: Uint8Array, needle: Uint8Array), which returns the first index of the needle in the data, or -1 if not found
-        // Make sure to use DOUBLE_CRLF for the needle instead of a string, as it must be a Uint8Array
-        
+async function handleRequest(conn: Deno.Conn): Promise<RequestData> {
         // the buffer that we read into
         const buf = new Uint8Array(4096);
         // the bytes for the request line and the headers, not including the final double CRLF
@@ -126,7 +130,6 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         }
 
         // HTTP uses ISO-8559-1 encoding (latin1) for headers
-        
         const decoded = dec(headerBytes, "latin1");
 
         // get the request line (first line) and the header list (every other line) from the decoded string
@@ -136,28 +139,82 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
         // you may want to use the parseHeaders() function from above
         const headers: Map<string, string> = parseHeaders(headerList);
 
+        return {requestLine, headers, body};
+}
+
+function requestAuth() : Uint8Array {
+    // construct response to request authentication
+    return enc("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"Please log in :) \"\r\nContent-Length: 0\r\n\r\n");
+}
+
+async function checkAuth( authHeader : string) : Promise<boolean> {
+    const encodedCredentials = authHeader.split(" ")[1];
+    const decodedCredentials = dec(decodeBase64(encodedCredentials));
+    const username = decodedCredentials.split(":")[0];
+    const password = decodedCredentials.split(":")[1];
+    
+    // check if username and password are correct
+    for(const account of accounts) {
+        //check hashed password
+        if(account.username === username && await compare(password, account.password)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+async function handleConnection(conn: Deno.Conn): Promise<void> {
+    try {
+        //handle the request
+        let originalRequest : RequestData = await handleRequest(conn);
+        
+        // ============================================= Backend Routing ========================================================
+
         // Determine your destination server on the backend using the host header
         // use the getBackend() function to determine all of the possible backends, and pick one
-        const address: string = headers.get("host")!;   // get host from request header
+        const address: string = originalRequest.headers.get("host")!;   // get host from request header
         const destIp: BackendInterface[] | undefined = getBackend(address);
 
         if(!destIp) {
-            log("ERROR", "Backend not found", {host: address, requestLine, headers, body});
+            log("ERROR", "Backend not found", {host: address, requestline: originalRequest.requestLine, body: originalRequest.body});
             await conn.write(enc("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
             return;
         }
+
+        // ============================================= Authentication ==========================================================
+
+        // TODO: Check if the particular backend requires authentication
+        if(true) { 
+            // check for authorization header
+            if(!originalRequest.headers.has("authorization")) {
+                await conn.write(requestAuth());
+                // get next request with auth
+                originalRequest = await handleRequest(conn);
+            }
+
+            //check credentials
+            const authHeader : string = originalRequest.headers.get("authorization")!;
+            if(!(await checkAuth(authHeader))) {
+                await conn.write(enc("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"));
+                return;
+            }
+        }
+
+        // ============================================= Forwarding the request ===================================================
+
 
         // Forward the request to the backend!
         // Use the Deno.connect() function to connect to the backend
         const backendConn = await Deno.connect({ hostname: destIp[0].address, port: destIp[0].port}); //TODO arbitrarily get the first backend for now
 
         // Construct the request to send to the backend, and write it to the backend connection
-        const request = constructRequest(requestLine, headers, body);
+        const request = constructRequest(originalRequest);
         await backendConn.write(request);
-        let bodyBytesRead = body.byteLength;
 
-        // Write everything else from the connection
-        const contentLength = parseInt(headers.get("content-length")!);
+        // ===================================== Write everything else from the connection =======================================
+        const contentLength = parseInt(originalRequest.headers.get("content-length")!);
+        let bodyBytesRead = originalRequest.body.byteLength;
+        let body = new Uint8Array(4096);
         while (bodyBytesRead < contentLength) { 
             const nbytes = await conn.read(body);
             if (nbytes === null) {
@@ -167,14 +224,14 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
             bodyBytesRead += nbytes;
         }
       
-        //log successful request
-        const referer : string | undefined = headers.get("referer");
-        const userAgent : string | undefined = headers.get("user-agent");
+        // ====================================== log successful request ========================================================
+        const referer : string | undefined = originalRequest.headers.get("referer");
+        const userAgent : string | undefined = originalRequest.headers.get("user-agent");
 
         const accessLog : AccessLog = {
-            method: requestLine.split(" ")[0],
-            url: requestLine.split(" ")[1],
-            protocol: requestLine.split(" ")[2],
+            method: originalRequest.requestLine.split(" ")[0],
+            url: originalRequest.requestLine.split(" ")[1],
+            protocol: originalRequest.requestLine.split(" ")[2],
             status: 200,
             size: contentLength,
             referer: referer? referer : "",
@@ -186,10 +243,11 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
 
         log("INFO", "Request successful", accessLog);
 
-        // Read the response from the backend and write it back to the client
+        // ======================================= Read the response from the backend and write it back to the  ===================================================================
         
         body = new Uint8Array(0);
-        headerBytes = new Uint8Array(0);
+        let headerBytes = new Uint8Array(0);
+        const buf = new Uint8Array(4096);
         while (true) {
             const nbytes = await backendConn.read(buf);
             if (nbytes === null) {
@@ -251,9 +309,28 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
     }
 }
 
+//
+
+interface Account {
+    username: string;
+    password: string;
+}
+
+interface Config {
+    accounts: Account[];
+}
+
+// read in the accounts from the config
+const config: Config = JSON.parse(await Deno.readTextFile('config.json'));
+const accounts = config.accounts;
+
+// generate a hash!
+// console.log(await hash("password"));
+
 if (import.meta.main) {
+    // read in auth files
     const listener = Deno.listen({ port: 8080 });
-    requestLoggingPermissions();
+    // requestLoggingPermissions();
 
     for await (const conn of listener) {
         // don't await because want to handle multiple connections at once
