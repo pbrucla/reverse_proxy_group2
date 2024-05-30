@@ -10,10 +10,9 @@ async function checkCache(address: string): Promise<Response | undefined> {
     }
 }
 
-async function addCache(address: string, serverResponse: ReadableStream): Promise<void> {
-    // new URL(`http://${address}/`);
+async function addCache(address: string, serverResponse: Response): Promise<void> {
     const cache = await caches.open(CACHE_NAME);
-    await cache.put(new Request(new URL(`http://${address}/`)), new Response(serverResponse));
+    await cache.put(new Request(new URL(`http://${address}/`)), serverResponse);
 }
 
 export {checkCache, addCache};

@@ -184,24 +184,14 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
             bodyBytesRead += nbytes;
         }
 
-        console.log("Adding cache");
         const serverReadableStream = backendConn.readable;
-        // const read = await readable.getReader().read();
-        await addCache(address, serverReadableStream);
-        // await serverReadableStream.pipeTo(conn.writable);
-
-        console.log("Added cache");
-        const newResponse = await checkCache(address);
-        console.log("Retrieved cache");
-        console.log(newResponse?.body);
-        if (newResponse) {
-            await newResponse.body?.pipeTo(conn.writable);
+        const response = new Response(serverReadableStream);
+        // Add cache using a clone of the response; don't await this as it takes a while
+        addCache(address, response.clone());
+        if (response) {
+            await response.body?.pipeTo(conn.writable);
             break sendConnection;
         }
-        
-        // Pipe the backend response back to the client
-        // await backendConn.readable.pipeTo(conn.writable);
-        // await backendConn.readable.pipeTo(conn.writable);
     } catch (err) {
         // If an error occurs while processing the request, *attempt* to respond with an error to the client
         try {
