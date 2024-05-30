@@ -1,7 +1,19 @@
+
+
 import { indexOfNeedle, concat } from "https://deno.land/std@0.223.0/bytes/mod.ts";
 import { AccessLog, log, requestLoggingPermissions } from "./logging.ts";
 
 const DOUBLE_CRLF = new Uint8Array([0xd, 0xa, 0xd, 0xa]);
+const rateMap = new Map<string, number>();
+const rate_limit = 10;
+const time_window = 1000;
+
+
+//clear rate map every second
+setInterval(() => {
+  rateMap.clear();
+}, time_window);
+
 
 // utility functions to encode and decode to/from Uint8Array
 function enc(x: string): Uint8Array {
@@ -23,7 +35,7 @@ function getBackend(host: string): BackendInterface[] | undefined {
     // You will also need to create some sort of config system to save this information
     const arrayOfHosts = new Map<string, BackendInterface[]>(
         [
-            ["cybrick.acmcyber.com", [{address: "155.248.199.0", port: 25561}]],
+            ["cybrick.acmcyber.com:8080", [{address: "155.248.199.0", port: 25561}]],
             ["video.acmcyber.com", [{address: "155.248.199.0", port: 25563}]]
         ]
     )
@@ -124,6 +136,26 @@ async function handleConnection(conn: Deno.Conn): Promise<void> {
                 break;
             }
         }
+
+        ////////////////Rate limiting
+        const ip = conn.remoteAddr as Deno.NetAddr;
+        const ipKey = `${ip.hostname}`;
+        console.log(ipKey);
+        if(rateMap.has(ipKey)) {
+          const count = rateMap.get(ipKey);
+          if(count && count >= rate_limit) {
+            log("ERROR", "Too many requests");
+            await conn.write(enc("HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\n\r\n"));
+            conn.close();
+            return;
+          } else {
+            rateMap.set(ipKey, count! + 1);
+          }
+        } else {
+          rateMap.set(ipKey, 1);
+        }
+
+
 
         // HTTP uses ISO-8559-1 encoding (latin1) for headers
         
